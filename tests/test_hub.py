@@ -174,5 +174,71 @@ class AskAllTests(unittest.TestCase):
             self.assertIn("hello-world", path)
 
 
+class VerdictTests(unittest.TestCase):
+    def test_winner_parsed_and_matched_case_insensitively(self):
+        winner, _ = hub.parse_verdict(
+            "WINNER: claude\n\nBecause reasons.", ["ChatGPT", "Claude"])
+        self.assertEqual(winner, "Claude")
+
+    def test_no_winner_line_means_no_winner(self):
+        winner, text = hub.parse_verdict("Just some text.",
+                                         ["ChatGPT", "Claude"])
+        self.assertIsNone(winner)
+        self.assertEqual(text, "Just some text.")
+
+    def test_unknown_name_means_no_winner(self):
+        winner, _ = hub.parse_verdict("WINNER: Someone Else",
+                                      ["ChatGPT", "Claude"])
+        self.assertIsNone(winner)
+
+    def test_pick_judge_prefers_named_then_claude_then_first(self):
+        chat, claude = MockClient("ChatGPT"), MockClient("Claude")
+        self.assertIs(hub.pick_judge([chat, claude], "chatgpt"), chat)
+        self.assertIs(hub.pick_judge([chat, claude]), claude)
+        self.assertIs(hub.pick_judge([chat]), chat)
+
+
+class DiscussionTests(unittest.TestCase):
+    def _scripted(self, name, replies):
+        return MockClient(name, replies=replies)
+
+    def test_full_discussion_flow(self):
+        chat = self._scripted("ChatGPT", ["a1", "a2", "WINNER: Claude\nok"])
+        claude = self._scripted(
+            "Claude", ["b1", "b2", "WINNER: Claude\n\nBest.\n\nFinal."])
+        result = hub.run_discussion([chat, claude], "What?")
+        self.assertEqual(len(result["rounds"]), 2)
+        self.assertEqual(result["winner"], "Claude")
+        self.assertIn("Final.", result["verdict"].text)
+        # The judge saw the round 2 answers in its prompt.
+        self.assertIn("a2", claude.prompts[-1])
+        self.assertIn("b2", claude.prompts[-1])
+        # The critique round saw the round 1 answers.
+        self.assertIn("a1", chat.prompts[1])
+        self.assertIn("b1", chat.prompts[1])
+
+    def test_discussion_survives_a_broken_participant(self):
+        class ExplodingClient(MockClient):
+            def ask(self, question):
+                raise RuntimeError("boom")
+
+        good = MockClient("Good", replies=["g1", "g2", "WINNER: Good\nfine"])
+        result = hub.run_discussion([ExplodingClient("Bad"), good], "What?",
+                                    judge_name="Good")
+        self.assertTrue(result["rounds"][0][0].error)
+        self.assertTrue(result["rounds"][1][0].error)
+        self.assertEqual(result["winner"], "Good")
+
+    def test_discussion_transcript_has_rounds_and_verdict(self):
+        chat = self._scripted("ChatGPT", ["a1", "a2", "WINNER: Claude\nok"])
+        claude = self._scripted("Claude", ["b1", "b2", "WINNER: Claude\nwin"])
+        result = hub.run_discussion([chat, claude], "What?")
+        text = hub.render_discussion("What?", result, asked_at="2026-11-03")
+        self.assertIn("## Round 1", text)
+        self.assertIn("## Round 2", text)
+        self.assertIn("## Verdict", text)
+        self.assertIn("Winner: Claude", text)
+
+
 if __name__ == "__main__":
     unittest.main()

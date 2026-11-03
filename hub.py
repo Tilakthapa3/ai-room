@@ -33,19 +33,54 @@ PARTICIPANT_SPECS = [
     ("Gemini", "gemini", "GEMINI_MODEL", "GEMINI_API_KEY", "gemini-3.8-flash"),
 ]
 
-DEMO_REPLIES = {
-    "ChatGPT": "Mock answer from ChatGPT to '{q}': start with networking "
-               "basics, then work through hands-on labs, and finish with a "
-               "structured course like a pentest certification path.",
-    "Claude": "Mock answer from Claude to '{q}': learn TCP/IP and Linux "
-              "first, then practice on legal lab targets, and document "
-              "everything you find as if you were writing a client report.",
-    "Gemini": "Mock answer from Gemini to '{q}': combine video courses "
-              "with daily practice on vulnerable machines, and join a "
-              "community so you can compare notes with other learners.",
-    "Local (Ollama)": "Mock answer from the local model to '{q}': build a "
-                      "home lab with virtual machines, break things safely, "
-                      "and keep a notebook of every technique that worked.",
+DEMO_SCRIPTS = {
+    # Each mock answers round 1, critiques in round 2, and (for the judge)
+    # delivers a verdict in round 3.
+    "ChatGPT": [
+        "Mock answer from ChatGPT to '{q}': start with networking basics, "
+        "then work through hands-on labs, and finish with a structured "
+        "course like a pentest certification path.",
+        "Mock critique from ChatGPT: the other answers skip structured "
+        "courses, which matter for interviews. My improved answer keeps "
+        "the labs-first order but adds a certification milestone.",
+        "WINNER: Claude\n\nMock verdict: the most complete learning path.\n\n"
+        "Final approved answer: learn TCP/IP and Linux, practice on legal "
+        "lab targets, document everything, and finish with a certification.",
+    ],
+    "Claude": [
+        "Mock answer from Claude to '{q}': learn TCP/IP and Linux first, "
+        "then practice on legal lab targets, and document everything you "
+        "find as if you were writing a client report.",
+        "Mock critique from Claude: the other answers underplay reporting, "
+        "which is half the job. My improved answer adds a report template "
+        "to every lab exercise.",
+        "WINNER: Claude\n\nMock verdict: reporting is what turns practice "
+        "into employable skill.\n\nFinal approved answer: learn TCP/IP and "
+        "Linux, practice on legal lab targets, and write a client-style "
+        "report for every finding.",
+    ],
+    "Gemini": [
+        "Mock answer from Gemini to '{q}': combine video courses with daily "
+        "practice on vulnerable machines, and join a community so you can "
+        "compare notes with other learners.",
+        "Mock critique from Gemini: the other answers are solo-only; a "
+        "community catches bad habits early. My improved answer adds a "
+        "weekly peer review to the practice routine.",
+        "WINNER: Claude\n\nMock verdict: the most complete learning path.\n\n"
+        "Final approved answer: learn TCP/IP and Linux, practice on legal "
+        "lab targets, document everything, and finish with a certification.",
+    ],
+    "Local (Ollama)": [
+        "Mock answer from the local model to '{q}': build a home lab with "
+        "virtual machines, break things safely, and keep a notebook of "
+        "every technique that worked.",
+        "Mock critique from the local model: the other answers need paid "
+        "courses or cloud labs; a home lab costs nothing. My improved "
+        "answer adds free, offline-friendly targets.",
+        "WINNER: Claude\n\nMock verdict: the most complete learning path.\n\n"
+        "Final approved answer: learn TCP/IP and Linux, practice on legal "
+        "lab targets, document everything, and finish with a certification.",
+    ],
 }
 
 OLLAMA_ENABLED_VALUES = {"1", "true", "yes", "on"}
@@ -76,8 +111,8 @@ def build_participants(env=None, demo=False, timeout=60):
     """
     env = os.environ if env is None else env
     if demo:
-        return [MockClient(name, reply=DEMO_REPLIES[name])
-                for name in DEMO_REPLIES]
+        return [MockClient(name, replies=DEMO_SCRIPTS[name])
+                for name in DEMO_SCRIPTS]
     clients = {"openai": OpenAIClient, "anthropic": AnthropicClient,
                "gemini": GeminiClient}
     participants = []
@@ -105,6 +140,110 @@ def ask_all(participants, question):
             answers.append(Answer(client.name, getattr(client, "model", "?"),
                                   error=f"unexpected: {redact(str(exc))}"))
     return answers
+
+
+CRITIQUE_PROMPT = (
+    "You are in round 2 of a discussion. The original question and every "
+    "participant's round 1 answer are below. Critique each answer briefly "
+    "(factual errors, gaps, what it missed), then give your improved final "
+    "answer.\n\nQuestion: {q}\n\nRound 1 answers:\n{answers}\n")
+
+JUDGE_PROMPT = (
+    "You are the judge. Pick the single best answer to the question below "
+    "from the round 2 answers. Reply with the first line exactly "
+    "'WINNER: <participant name>', then your reasons, then the final "
+    "approved answer (you may lightly edit the winner for correctness)."
+    "\n\nQuestion: {q}\n\nRound 2 answers:\n{answers}\n")
+
+WINNER_RE = re.compile(r"^\s*WINNER:\s*(.+?)\s*$", re.MULTILINE | re.IGNORECASE)
+
+
+def format_answers(answers):
+    parts = []
+    for answer in answers:
+        body = answer.text if not answer.error else f"(error: {answer.error})"
+        parts.append(f"--- {answer.name} ---\n{body}")
+    return "\n\n".join(parts)
+
+
+def parse_verdict(text, names):
+    """Return (winner name or None, full verdict text).
+
+    The winner is the name on the WINNER: line, matched case-insensitively
+    against the participant names. Anything else means no clear winner.
+    """
+    match = WINNER_RE.search(text or "")
+    if not match:
+        return None, text
+    claimed = match.group(1).strip()
+    for name in names:
+        if name.lower() == claimed.lower():
+            return name, text
+    return None, text
+
+
+def pick_judge(participants, judge_name=None):
+    """The judge is the named participant, else Claude, else the first."""
+    if judge_name:
+        for client in participants:
+            if client.name.lower() == judge_name.lower():
+                return client
+    for client in participants:
+        if client.name == "Claude":
+            return client
+    return participants[0] if participants else None
+
+
+def run_discussion(participants, question, judge_name=None):
+    """Round 1: everyone answers. Round 2: everyone critiques and improves.
+    Round 3: the judge picks the best and writes the approved answer."""
+    round1 = ask_all(participants, question)
+    critique_prompt = CRITIQUE_PROMPT.format(
+        q=question, answers=format_answers(round1))
+    round2 = ask_all(participants, critique_prompt)
+    judge = pick_judge(participants, judge_name)
+    judge_prompt = JUDGE_PROMPT.format(q=question, answers=format_answers(round2))
+    try:
+        verdict = judge.ask(judge_prompt)
+    except Exception as exc:  # noqa: BLE001 - a failed judge stops nothing
+        verdict = Answer(judge.name, getattr(judge, "model", "?"),
+                         error=f"unexpected: {redact(str(exc))}")
+    winner, _ = parse_verdict(verdict.text, [p.name for p in participants])
+    return {"rounds": [round1, round2], "judge": judge,
+            "verdict": verdict, "winner": winner}
+
+
+def render_discussion(question, result, asked_at=None):
+    asked_at = asked_at or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    lines = ["# Discussion: ask, critique, approve", "",
+             f"Asked: {asked_at}", "", f"Question: {question}", ""]
+    for number, answers in enumerate(result["rounds"], start=1):
+        lines.append(f"## Round {number}")
+        lines.append("")
+        for answer in answers:
+            lines.append(f"### {answer.name} (`{answer.model}`)")
+            lines.append("")
+            if answer.error:
+                lines.append(f"_Error: {answer.error}_")
+            else:
+                lines.append(answer.text)
+            lines.append("")
+            lines.append(f"- time: {answer.seconds}s")
+            if answer.usage:
+                lines.append(f"- usage: {answer.usage}")
+            lines.append("")
+    verdict = result["verdict"]
+    lines.append(f"## Verdict (judge: {result['judge'].name})")
+    lines.append("")
+    if result["winner"]:
+        lines.append(f"Winner: {result['winner']}")
+        lines.append("")
+    if verdict.error:
+        lines.append(f"_Error: {verdict.error}_")
+    else:
+        lines.append(verdict.text)
+    lines.append("")
+    return "\n".join(lines)
 
 
 def render_transcript(question, answers, asked_at=None):
@@ -169,6 +308,13 @@ def main(argv=None):
                         help="do not save a transcript file")
     parser.add_argument("--timeout", type=int, default=60,
                         help="seconds to wait per participant (default: 60)")
+    parser.add_argument("--mode", choices=["compare", "discuss"],
+                        default="compare",
+                        help="compare: ask all once. discuss: critique round "
+                        "plus a judge who approves the best answer.")
+    parser.add_argument("--judge", default=None,
+                        help="judge participant for discuss mode "
+                        "(default: Claude, else the first participant)")
     args = parser.parse_args(argv)
 
     load_dotenv(args.env)
@@ -188,21 +334,51 @@ def main(argv=None):
               file=sys.stderr)
         return 2
 
-    answers = ask_all(participants, question)
-    for answer in answers:
-        print(f"\n===== {answer.name} (`{answer.model}`) =====")
-        if answer.error:
-            print(f"Error: {answer.error}")
-        else:
-            print(answer.text)
-        print(f"[{answer.seconds}s" + (f", usage: {answer.usage}]" if answer.usage else "]"))
+    if args.mode == "compare":
+        answers = ask_all(participants, question)
+        for answer in answers:
+            print(f"\n===== {answer.name} (`{answer.model}`) =====")
+            if answer.error:
+                print(f"Error: {answer.error}")
+            else:
+                print(answer.text)
+            print(f"[{answer.seconds}s" + (f", usage: {answer.usage}]" if answer.usage else "]"))
+
+        if not args.no_save:
+            path = save_transcript(args.save_dir, question,
+                                   render_transcript(question, answers))
+            print(f"\nTranscript saved: {path}")
+        return 1 if all(a.error for a in answers) else 0
+
+    judge = pick_judge(participants, args.judge)
+    calls = 2 * len(participants) + 1
+    print(f"Discuss mode: round 1 ({len(participants)} answers), round 2 "
+          f"({len(participants)} critiques), judge {judge.name}. "
+          f"Up to {calls} provider calls.")
+    result = run_discussion(participants, question, args.judge)
+    for number, round_answers in enumerate(result["rounds"], start=1):
+        print(f"\n########## ROUND {number} ##########")
+        for answer in round_answers:
+            print(f"\n===== {answer.name} (`{answer.model}`) =====")
+            if answer.error:
+                print(f"Error: {answer.error}")
+            else:
+                print(answer.text)
+    verdict = result["verdict"]
+    print(f"\n########## VERDICT (judge: {result['judge'].name}) ##########")
+    if result["winner"]:
+        print(f"Winner: {result['winner']}")
+    if verdict.error:
+        print(f"Error: {verdict.error}")
+    else:
+        print(verdict.text)
 
     if not args.no_save:
         path = save_transcript(args.save_dir, question,
-                               render_transcript(question, answers))
+                               render_discussion(question, result))
         print(f"\nTranscript saved: {path}")
-
-    return 1 if all(a.error for a in answers) else 0
+    failed = all(a.error for a in result["rounds"][0]) or bool(verdict.error)
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

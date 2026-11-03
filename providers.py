@@ -185,16 +185,31 @@ class OllamaClient:
 
 
 class MockClient:
-    """Canned replies for --demo: no keys, no network, proves the loop."""
+    """Canned replies for --demo: no keys, no network, proves the loop.
 
-    def __init__(self, name, model="mock", reply=""):
+    Give `replies` (a list) to return a different canned reply per call,
+    e.g. round 1 answer, round 2 critique, judge verdict. Otherwise the
+    single `reply` is used, with {q} replaced by the question.
+    """
+
+    def __init__(self, name, model="mock", reply="", replies=None):
         self.name = name
         self.model = model
         self.reply = reply or f"[{name} mock answer]"
+        self.replies = replies
+        self.calls = 0
+        self.prompts = []
 
     def ask(self, question):
-        try:
-            text = self.reply.format(q=question)
-        except (KeyError, IndexError):
+        self.prompts.append(question)
+        if self.replies is not None:
+            idx = min(self.calls, len(self.replies) - 1)
+            self.calls += 1
+            text = self.replies[idx]
+        else:
             text = self.reply
+        try:
+            text = text.format(q=question)
+        except (KeyError, IndexError):
+            pass
         return Answer(self.name, self.model, text=text, seconds=0.0)

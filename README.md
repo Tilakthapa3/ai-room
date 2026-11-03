@@ -48,6 +48,43 @@ python3 hub.py --demo --ask "Why is the sky blue?"
 Answers save to `transcripts/` as Markdown. Use `--no-save` to skip that,
 and `--timeout 120` if a slow model needs longer.
 
+## Modes
+
+### Compare (default)
+
+Ask every participant once, print the answers side by side, save a
+transcript. This is the cheapest mode: one call per participant.
+
+```bash
+python3 hub.py --ask "What is the best way to learn penetration testing?"
+```
+
+### Discuss: talk, compare, approve the best
+
+Three rounds, so the AIs talk to each other instead of answering in
+isolation:
+
+1. **Round 1** — every participant answers the question.
+2. **Round 2** — every participant sees all the round 1 answers, critiques
+   them (errors, gaps, what they missed), and gives an improved answer.
+3. **Verdict** — a judge reads the round 2 answers and approves the best
+   one: first line `WINNER: <name>`, then reasons, then the final approved
+   answer. The judge may lightly edit the winner for correctness.
+
+```bash
+python3 hub.py --mode discuss --ask "How do I start learning penetration testing?"
+python3 hub.py --mode discuss --judge ChatGPT --ask "..."   # pick the judge
+```
+
+The default judge is Claude when it is configured, otherwise the first
+participant. If the judge's reply has no clear `WINNER:` line, the
+transcript still records the verdict and no winner is claimed.
+
+**Cost:** discuss mode makes up to `2N + 1` provider calls (N answers, N
+critiques, 1 verdict), so it costs roughly twice the compare mode plus
+one call. The hub prints the call count before it starts. A failed
+participant never stops the rest — its rounds are recorded as errors.
+
 ## Cost
 
 Every real question costs money on every provider you configured — a few
@@ -87,8 +124,8 @@ python3 -m unittest discover -s tests -v
 
 ## Roadmap
 
-- Debate mode: participants critique each other's answers, then one
-  writes a synthesis.
+- Discuss mode: participants critique each other's answers, then a judge
+  approves the best one. Done — see Modes above.
 - Relay mode: each answer builds on the previous one.
 - A synthesis step for ask-all mode: one participant summarizes where
   the answers agree and where they differ.
