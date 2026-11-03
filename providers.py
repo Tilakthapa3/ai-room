@@ -38,7 +38,7 @@ class ProviderError(Exception):
 
 # Masks anything that looks like an API key before it can reach an error
 # message, a transcript, or a log line.
-_KEY_RE = re.compile(r"(sk-[A-Za-z0-9_\-]{4}|AIza[A-Za-z0-9_\-]{4})[A-Za-z0-9_\-]*")
+_KEY_RE = re.compile(r"(sk-[A-Za-z0-9_\-]{4}|AIza[A-Za-z0-9_\-]{4}|xai-[A-Za-z0-9_\-]{4})[A-Za-z0-9_\-]*")
 
 
 def redact(text):
@@ -104,6 +104,22 @@ class OpenAIClient:
             return text, data.get("usage", {})
 
         return _timed(self.name, self.model, call)
+
+
+class GenericChatClient(OpenAIClient):
+    """An OpenAI-shaped chat API under a different base URL and name.
+
+    Grok, DeepSeek, Mistral, and OpenRouter all accept the same
+    POST {base}/chat/completions payload and choices[0].message.content
+    reply shape as OpenAIClient. Only the display name and base URL
+    differ, so this subclass exists to stop their answers being
+    labelled 'ChatGPT'.
+    """
+
+    def __init__(self, name, api_key, model, base_url, timeout=60):
+        super().__init__(api_key, model=model, timeout=timeout,
+                         base_url=base_url)
+        self.name = name
 
 
 class AnthropicClient:

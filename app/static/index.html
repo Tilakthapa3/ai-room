@@ -82,6 +82,10 @@
           <option>ChatGPT</option>
           <option>Claude</option>
           <option>Gemini</option>
+          <option>Grok</option>
+          <option>DeepSeek</option>
+          <option>Mistral</option>
+          <option>OpenRouter</option>
         </select>
       </label>
     </div>
@@ -101,6 +105,10 @@
       <label>OpenAI API key (ChatGPT)<input type="password" id="key-openai" autocomplete="off"></label>
       <label>Anthropic API key (Claude)<input type="password" id="key-anthropic" autocomplete="off"></label>
       <label>Google API key (Gemini)<input type="password" id="key-gemini" autocomplete="off"></label>
+      <label>xAI API key (Grok)<input type="password" id="key-xai" autocomplete="off"></label>
+      <label>DeepSeek API key<input type="password" id="key-deepseek" autocomplete="off"></label>
+      <label>Mistral API key<input type="password" id="key-mistral" autocomplete="off"></label>
+      <label>OpenRouter API key<input type="password" id="key-openrouter" autocomplete="off"></label>
       <label><input type="checkbox" id="key-ollama"> Enable local Ollama model</label>
       <label>Ollama host<input type="text" id="key-ollama-host" placeholder="http://localhost:11434"></label>
       <p><button id="save-keys-btn">Save keys</button>
@@ -157,7 +165,9 @@ async function loadKeyStatus() {
   const st = await res.json();
   const parts = [
     ["ChatGPT", st.OPENAI_API_KEY], ["Claude", st.ANTHROPIC_API_KEY],
-    ["Gemini", st.GEMINI_API_KEY], ["Local", st.OLLAMA_ENABLED]
+    ["Gemini", st.GEMINI_API_KEY], ["Grok", st.XAI_API_KEY],
+    ["DeepSeek", st.DEEPSEEK_API_KEY], ["Mistral", st.MISTRAL_API_KEY],
+    ["OpenRouter", st.OPENROUTER_API_KEY], ["Local", st.OLLAMA_ENABLED]
   ];
   $("provider-status").innerHTML = parts.map(function (p) {
     return '<span class="badge' + (p[1] ? " on" : "") + '">' + esc(p[0]) +
@@ -172,6 +182,10 @@ $("save-keys-btn").addEventListener("click", async function () {
     OPENAI_API_KEY: $("key-openai").value,
     ANTHROPIC_API_KEY: $("key-anthropic").value,
     GEMINI_API_KEY: $("key-gemini").value,
+    XAI_API_KEY: $("key-xai").value,
+    DEEPSEEK_API_KEY: $("key-deepseek").value,
+    MISTRAL_API_KEY: $("key-mistral").value,
+    OPENROUTER_API_KEY: $("key-openrouter").value,
     OLLAMA_ENABLED: $("key-ollama").checked ? "true" : "",
     OLLAMA_HOST: $("key-ollama-host").value
   };
@@ -181,6 +195,8 @@ $("save-keys-btn").addEventListener("click", async function () {
   });
   $("keys-status").textContent = res.ok ? "Saved." : "Could not save.";
   $("key-openai").value = ""; $("key-anthropic").value = ""; $("key-gemini").value = "";
+  $("key-xai").value = ""; $("key-deepseek").value = ""; $("key-mistral").value = "";
+  $("key-openrouter").value = "";
   loadKeyStatus();
 });
 

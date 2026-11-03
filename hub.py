@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Ask-all hub: ask every configured AI the same question, compare answers.
 
-One question goes to each participant (ChatGPT, Claude, Gemini, and an
-optional local Ollama model). Answers print as they arrive and are saved
-as a Markdown transcript. A participant that fails never stops the rest.
+One question goes to each participant (ChatGPT, Claude, Gemini, Grok,
+DeepSeek, Mistral, OpenRouter, and an optional local Ollama model).
+Answers print as they arrive and are saved as a Markdown transcript.
+A participant that fails never stops the rest.
 
 Keys come only from the environment or a .env file next to this script.
 Run --demo to watch mock participants answer with no keys and no network.
@@ -22,15 +23,28 @@ import re
 import sys
 from datetime import datetime, timezone
 
-from providers import (Answer, AnthropicClient, GeminiClient, MockClient,
-                       OllamaClient, OpenAIClient, redact)
+from providers import (Answer, AnthropicClient, GeminiClient,
+                       GenericChatClient, MockClient, OllamaClient,
+                       OpenAIClient, redact)
 
-# (display name, client kind, model env var, key env var, default model)
+# (display name, client kind, model env var, key env var, default model,
+#  base URL; None except for "generic" clients, which share the
+#  OpenAI-shaped chat API under their own base URL)
 PARTICIPANT_SPECS = [
-    ("ChatGPT", "openai", "OPENAI_MODEL", "OPENAI_API_KEY", "gpt-4o-mini"),
+    ("ChatGPT", "openai", "OPENAI_MODEL", "OPENAI_API_KEY", "gpt-4o-mini",
+     None),
     ("Claude", "anthropic", "ANTHROPIC_MODEL", "ANTHROPIC_API_KEY",
-     "claude-sonnet-5-5"),
-    ("Gemini", "gemini", "GEMINI_MODEL", "GEMINI_API_KEY", "gemini-3.8-flash"),
+     "claude-sonnet-5-5", None),
+    ("Gemini", "gemini", "GEMINI_MODEL", "GEMINI_API_KEY", "gemini-3.8-flash",
+     None),
+    ("Grok", "generic", "XAI_MODEL", "XAI_API_KEY", "grok-4-1-fast",
+     "https://api.x.ai/v1"),
+    ("DeepSeek", "generic", "DEEPSEEK_MODEL", "DEEPSEEK_API_KEY",
+     "deepseek-flash", "https://api.deepseek.com/v1"),
+    ("Mistral", "generic", "MISTRAL_MODEL", "MISTRAL_API_KEY",
+     "mistral-small-latest", "https://api.mistral.ai/v1"),
+    ("OpenRouter", "generic", "OPENROUTER_MODEL", "OPENROUTER_API_KEY",
+     "openrouter/auto", "https://openrouter.ai/api/v1"),
 ]
 
 DEMO_SCRIPTS = {
@@ -116,12 +130,16 @@ def build_participants(env=None, demo=False, timeout=60):
     clients = {"openai": OpenAIClient, "anthropic": AnthropicClient,
                "gemini": GeminiClient}
     participants = []
-    for _name, kind, model_var, key_var, default_model in PARTICIPANT_SPECS:
+    for name, kind, model_var, key_var, default_model, base_url in PARTICIPANT_SPECS:
         key = env.get(key_var, "").strip()
         if not key:
             continue
         model = env.get(model_var, "").strip() or default_model
-        participants.append(clients[kind](key, model=model, timeout=timeout))
+        if kind == "generic":
+            participants.append(GenericChatClient(
+                name, key, model=model, base_url=base_url, timeout=timeout))
+        else:
+            participants.append(clients[kind](key, model=model, timeout=timeout))
     if env.get("OLLAMA_ENABLED", "").strip().lower() in OLLAMA_ENABLED_VALUES:
         participants.append(OllamaClient(
             model=env.get("OLLAMA_MODEL", "").strip() or "qwen2.5:7b",
@@ -278,7 +296,7 @@ def save_transcript(save_dir, question, text):
 def describe_participants(participants, env=None):
     env = os.environ if env is None else env
     lines = []
-    for name, _kind, _model_var, key_var, _default in PARTICIPANT_SPECS:
+    for name, _kind, _model_var, key_var, _default, _base_url in PARTICIPANT_SPECS:
         state = "key set" if env.get(key_var, "").strip() else "no key"
         lines.append(f"- {name}: {state}")
     ollama = ("enabled" if env.get("OLLAMA_ENABLED", "").strip().lower()

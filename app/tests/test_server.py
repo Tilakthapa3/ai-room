@@ -164,6 +164,21 @@ class DatabaseTests(unittest.TestCase):
         server.save_user_keys("sub9", {"OPENAI_API_KEY": ""})
         self.assertNotIn("OPENAI_API_KEY", server.get_user_keys("sub9"))
 
+    def test_new_provider_keys_round_trip(self):
+        server.upsert_user("google", "sub10", "y@z.w", "Y", "")
+        server.save_user_keys("sub10", {"XAI_API_KEY": "xai-test",
+                                        "DEEPSEEK_API_KEY": "ds-test",
+                                        "MISTRAL_API_KEY": "m-test",
+                                        "OPENROUTER_API_KEY": "or-test"})
+        stored = server.get_user_keys("sub10")
+        self.assertEqual(stored.get("XAI_API_KEY"), "xai-test")
+        self.assertEqual(stored.get("DEEPSEEK_API_KEY"), "ds-test")
+        self.assertEqual(stored.get("MISTRAL_API_KEY"), "m-test")
+        self.assertEqual(stored.get("OPENROUTER_API_KEY"), "or-test")
+        self.assertIn("XAI_API_KEY", server.KEY_FIELDS)
+        server.save_user_keys("sub10", {"XAI_API_KEY": ""})
+        self.assertNotIn("XAI_API_KEY", server.get_user_keys("sub10"))
+
 
 class PerUserEnvTests(unittest.TestCase):
     def test_participants_from_per_user_env_only(self):

@@ -1,9 +1,10 @@
 # Ask-All Hub
 
 Ask every configured AI the same question, side by side, and compare the
-answers. One question goes to ChatGPT, Claude, Gemini, and optionally a
-local Ollama model. Answers print as they arrive and are saved as a
-Markdown transcript. A participant that fails never stops the rest.
+answers. One question goes to ChatGPT, Claude, Gemini, Grok, DeepSeek,
+Mistral, OpenRouter, and optionally a local Ollama model. Answers print
+as they arrive and are saved as a Markdown transcript. A participant
+that fails never stops the rest.
 
 Standard library only — no dependencies, no framework. Keys live only in
 a `.env` file on your machine, never in the repo and never in chat.
@@ -12,7 +13,8 @@ a `.env` file on your machine, never in the repo and never in chat.
 
 There is no public API key for Muse the assistant, so Muse cannot join
 as a participant. The participants are the providers with real APIs:
-OpenAI, Anthropic, Google, and local models through Ollama.
+OpenAI, Anthropic, Google, xAI, DeepSeek, Mistral, OpenRouter, and
+local models through Ollama.
 
 ## Setup
 
@@ -27,6 +29,10 @@ Then put your keys in `.env`:
 | `OPENAI_API_KEY` | https://platform.openai.com/api-keys |
 | `ANTHROPIC_API_KEY` | https://console.anthropic.com/settings/keys |
 | `GEMINI_API_KEY` | https://aistudio.google.com/apikey |
+| `XAI_API_KEY` | https://console.x.ai |
+| `DEEPSEEK_API_KEY` | https://platform.deepseek.com/api_keys |
+| `MISTRAL_API_KEY` | https://console.mistral.ai/api-keys |
+| `OPENROUTER_API_KEY` | https://openrouter.ai/keys |
 
 For the local participant, install [Ollama](https://ollama.com), pull a
 model once (`ollama pull qwen2.5:7b`), and set `OLLAMA_ENABLED=true` in
@@ -100,10 +106,15 @@ Defaults (verified against provider docs, November 2026):
 - ChatGPT: `gpt-4o-mini`
 - Claude: `claude-sonnet-5-5`
 - Gemini: `gemini-3.8-flash`
+- Grok: `grok-4-1-fast`
+- DeepSeek: `deepseek-flash`
+- Mistral: `mistral-small-latest`
+- OpenRouter: `openrouter/auto` (a router fallback — pick a full model slug)
 - Ollama: `qwen2.5:7b`
 
 Model IDs change over time. Override any of them in `.env` with
-`OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`, or `OLLAMA_MODEL`.
+`OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`, `XAI_MODEL`,
+`DEEPSEEK_MODEL`, `MISTRAL_MODEL`, `OPENROUTER_MODEL`, or `OLLAMA_MODEL`.
 If a provider answers 404 for a model, that is almost always a renamed
 or retired model ID — check the provider's model list and update `.env`.
 

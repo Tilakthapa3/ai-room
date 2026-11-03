@@ -9,9 +9,9 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import hub
-from providers import (AnthropicClient, Answer, GeminiClient, MockClient,
-                       OllamaClient, OpenAIClient, ProviderError, redact,
-                       _post_json)
+from providers import (AnthropicClient, Answer, GeminiClient,
+                       GenericChatClient, MockClient, OllamaClient,
+                       OpenAIClient, ProviderError, redact, _post_json)
 
 
 class RedactTests(unittest.TestCase):
@@ -23,6 +23,9 @@ class RedactTests(unittest.TestCase):
 
     def test_gemini_key_masked(self):
         self.assertNotIn("SECRETKEY", redact("AIzaSyD-SECRETKEY"))
+
+    def test_xai_key_masked(self):
+        self.assertNotIn("SECRETKEY", redact("bad key xai-abcSECRETKEY here"))
 
     def test_plain_text_untouched(self):
         self.assertEqual(redact("plain message"), "plain message")
@@ -139,6 +142,61 @@ class ProviderShapeTests(unittest.TestCase):
 
         with mock.patch("providers._post_json", side_effect=boom):
             ans = AnthropicClient("sk-ant-api03-SECRETKEY").ask("hello?")
+        self.assertNotIn("SECRETKEY", ans.error)
+
+
+class GenericProviderTests(unittest.TestCase):
+    def test_all_four_generic_participants_built(self):
+        env = {"XAI_API_KEY": "x", "DEEPSEEK_API_KEY": "d",
+               "MISTRAL_API_KEY": "m", "OPENROUTER_API_KEY": "o"}
+        parts = hub.build_participants(env=env)
+        self.assertEqual([p.name for p in parts],
+                         ["Grok", "DeepSeek", "Mistral", "OpenRouter"])
+        self.assertTrue(all(isinstance(p, GenericChatClient) for p in parts))
+        self.assertEqual([p.model for p in parts],
+                         ["grok-4-1-fast", "deepseek-flash",
+                          "mistral-small-latest", "openrouter/auto"])
+        self.assertEqual([p.base_url for p in parts],
+                         ["https://api.x.ai/v1",
+                          "https://api.deepseek.com/v1",
+                          "https://api.mistral.ai/v1",
+                          "https://openrouter.ai/api/v1"])
+
+    def test_generic_model_override_respected(self):
+        env = {"XAI_API_KEY": "x", "XAI_MODEL": "grok-4"}
+        parts = hub.build_participants(env=env)
+        self.assertEqual(parts[0].model, "grok-4")
+
+    def test_generic_request_uses_own_base_url_and_name(self):
+        calls = {}
+
+        def fake(url, headers, payload, timeout, provider):
+            calls["url"] = url
+            calls["headers"] = headers
+            calls["provider"] = provider
+            return {"choices": [{"message": {"content": "grok hi"}}],
+                    "usage": {}}
+
+        client = GenericChatClient("Grok", "xai-k", model="grok-4-1-fast",
+                                   base_url="https://api.x.ai/v1")
+        with mock.patch("providers._post_json", side_effect=fake):
+            ans = client.ask("hello?")
+        self.assertEqual(ans.name, "Grok")
+        self.assertEqual(ans.text, "grok hi")
+        self.assertEqual(calls["url"],
+                         "https://api.x.ai/v1/chat/completions")
+        self.assertEqual(calls["headers"]["Authorization"], "Bearer xai-k")
+        self.assertEqual(calls["provider"], "Grok")
+
+    def test_generic_key_never_leaks_into_error(self):
+        def boom(url, headers, payload, timeout, provider):
+            raise ProviderError(provider, 401, "key xai-abcSECRETKEY bad")
+
+        client = GenericChatClient("Grok", "xai-abcSECRETKEY",
+                                   model="grok-4-1-fast",
+                                   base_url="https://api.x.ai/v1")
+        with mock.patch("providers._post_json", side_effect=boom):
+            ans = client.ask("hello?")
         self.assertNotIn("SECRETKEY", ans.error)
 
 
