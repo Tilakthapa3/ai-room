@@ -19,6 +19,29 @@ Google allows `http://localhost:8080` redirect URIs for testing, so you
 can try the full sign-in flow on your own computer before hosting
 anything. Production needs a public `https://` URL.
 
+## Install on your phone (free, no app store)
+
+The app is installable as a web app (PWA): manifest, icons, and a
+service worker are built in. It costs nothing and needs no store review.
+
+**iPhone (Safari):** open the app's URL in Safari, tap Share, then
+**Add to Home Screen**. It gets its own icon and opens full-screen like
+an app. This works from any URL, including your computer's address on
+your home Wi-Fi.
+
+**Android (Chrome):** open the app's URL and tap **Install** when Chrome
+offers it (or menu → Install app). Chrome only offers this over HTTPS
+(or `localhost`), so for your phone use a free HTTPS tunnel — see below.
+
+**Free HTTPS URL for your phone:** on the computer running the server,
+install [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect/downloads/)
+and run `cloudflared tunnel --url http://localhost:8080`. It prints a
+free `https://....trycloudflare.com` address. Set `APP_BASE_URL` to that
+address, add `https://....trycloudflare.com/auth/google/callback` as a
+redirect URI in Google Cloud (same step as localhost), restart, and open
+the tunnel address on your phone. Note the tunnel address changes each
+time you restart it.
+
 ## Setup 1: Sign in with Google (free, ~10 minutes)
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/) and

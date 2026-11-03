@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ai Room</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#1a1a1a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ai Room">
+<link rel="apple-touch-icon" href="/icon-180.png">
 <style>
   body { font-family: -apple-system, system-ui, sans-serif; margin: 0 auto;
          max-width: 760px; padding: 20px; line-height: 1.5; color: #1a1a1a; }
@@ -248,6 +255,9 @@ async function loadHistory() {
 }
 
 (async function init() {
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js").catch(function () {});
+  }
   await loadConfig();
   if (await loadMe()) { loadKeyStatus(); loadHistory(); }
 })();

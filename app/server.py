@@ -226,6 +226,67 @@ def user_transcript_dir(sub):
     return path
 
 
+# ---------------------------------------------------------------- icons
+# Icons are generated in code (no image libraries, no binary files in the
+# repo): a dark rounded square with three chat dots. Generated once per
+# size and cached.
+
+_icon_cache = {}
+
+
+def make_icon_png(size):
+    """Return PNG bytes for a square app icon of the given pixel size."""
+    if size in _icon_cache:
+        return _icon_cache[size]
+    import zlib
+
+    def chunk(kind, data):
+        body = kind + data
+        return (len(data).to_bytes(4, "big") + body +
+                (zlib.crc32(body) & 0xFFFFFFFF).to_bytes(4, "big"))
+
+    radius = max(1, int(size * 0.22))
+    bg = (26, 26, 26, 255)
+    dots = [(-0.27, 0.02, 0.085, (255, 255, 255, 255)),
+            (0.0, 0.02, 0.085, (125, 211, 252, 255)),
+            (0.27, 0.02, 0.085, (251, 191, 36, 255))]
+    center = size / 2.0
+    raw = bytearray()
+    for y in range(size):
+        raw.append(0)  # filter: none
+        for x in range(size):
+            transparent = False
+            if x < radius and y < radius:
+                transparent = (x - radius) ** 2 + (y - radius) ** 2 > radius ** 2
+            elif x >= size - radius and y < radius:
+                transparent = ((x - (size - 1 - radius)) ** 2
+                               + (y - radius) ** 2 > radius ** 2)
+            elif x < radius and y >= size - radius:
+                transparent = ((x - radius) ** 2
+                               + (y - (size - 1 - radius)) ** 2 > radius ** 2)
+            elif x >= size - radius and y >= size - radius:
+                transparent = ((x - (size - 1 - radius)) ** 2
+                               + (y - (size - 1 - radius)) ** 2 > radius ** 2)
+            if transparent:
+                raw += b"\x00\x00\x00\x00"
+                continue
+            pixel = bg
+            for ox, oy, rfrac, color in dots:
+                dx = x - (center + ox * size)
+                dy = y - (center + oy * size)
+                if dx * dx + dy * dy <= (rfrac * size) ** 2:
+                    pixel = color
+                    break
+            raw += bytes(pixel)
+    ihdr = size.to_bytes(4, "big") + size.to_bytes(4, "big") + bytes(
+        [8, 6, 0, 0, 0])
+    png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) +
+           chunk(b"IDAT", zlib.compress(bytes(raw), level=9)) +
+           chunk(b"IEND", b""))
+    _icon_cache[size] = png
+    return png
+
+
 # ---------------------------------------------------------------- Google
 
 def google_enabled():
@@ -451,6 +512,13 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def send_bytes(self, data, content_type, status=200):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def redirect(self, location, extra_headers=()):
         self.send_response(302)
         self.send_header("Location", location)
@@ -511,6 +579,20 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/":
             with open(INDEX_PATH, "rb") as handle:
                 self.send_html(handle.read())
+            return
+        if path == "/manifest.json":
+            with open(os.path.join(APP_DIR, "static", "manifest.json"),
+                      "rb") as handle:
+                self.send_bytes(handle.read(), "application/manifest+json")
+            return
+        if path == "/sw.js":
+            with open(os.path.join(APP_DIR, "static", "sw.js"),
+                      "rb") as handle:
+                self.send_bytes(handle.read(), "application/javascript")
+            return
+        if path in ("/icon-180.png", "/icon-192.png", "/icon-512.png"):
+            size = int(path.split("-")[1].split(".")[0])
+            self.send_bytes(make_icon_png(size), "image/png")
             return
         if path == "/.well-known/apple-app-site-association":
             # Required by Sign in with Apple for the web: Apple fetches this

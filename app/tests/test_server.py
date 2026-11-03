@@ -212,6 +212,26 @@ class HttpTests(unittest.TestCase):
         status, _headers, data = self.request("GET", "/")
         self.assertEqual(status, 200)
         self.assertIn(b"Ai Room", data)
+        self.assertIn(b'rel="manifest"', data)
+
+    def test_manifest_served(self):
+        status, _headers, data = self.request("GET", "/manifest.json")
+        self.assertEqual(status, 200)
+        body = json.loads(data)
+        self.assertEqual(body["name"], "Ai Room")
+        self.assertEqual(body["display"], "standalone")
+
+    def test_service_worker_served(self):
+        status, _headers, data = self.request("GET", "/sw.js")
+        self.assertEqual(status, 200)
+        self.assertIn(b"ai-room-v1", data)
+
+    def test_icon_is_a_real_png(self):
+        status, headers, data = self.request("GET", "/icon-192.png")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Content-Type"], "image/png")
+        self.assertTrue(data.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertEqual(len(server.make_icon_png(192)), len(data))
 
     def test_me_requires_session(self):
         status, _headers, _data = self.request("GET", "/api/me")
