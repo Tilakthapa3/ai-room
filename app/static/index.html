@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ai Room</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 0 auto;
+         max-width: 760px; padding: 20px; line-height: 1.5; color: #1a1a1a; }
+  h1 { font-size: 28px; margin-bottom: 4px; }
+  .sub { color: #666; margin-top: 0; }
+  .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px;
+          margin: 16px 0; }
+  textarea { width: 100%; min-height: 70px; font-size: 16px; padding: 10px;
+             border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; }
+  input[type=text], input[type=password] { width: 100%; padding: 9px;
+             border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box;
+             font-size: 15px; margin: 4px 0 10px; }
+  button { font-size: 16px; padding: 10px 18px; border-radius: 8px;
+           border: 1px solid #ccc; background: #fff; cursor: pointer; }
+  button.primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  .login-btn { display: block; width: 100%; margin: 10px 0; padding: 13px;
+               font-size: 17px; text-align: center; text-decoration: none;
+               color: #1a1a1a; }
+  .login-btn.disabled { opacity: 0.45; pointer-events: none; }
+  .answer { border-top: 1px solid #eee; padding: 12px 0; white-space: pre-wrap; }
+  .answer h3 { margin: 0 0 6px; }
+  .winner { background: #eef7ee; border: 1px solid #9ccc9c; border-radius: 8px;
+            padding: 12px; margin: 12px 0; }
+  .error { color: #b00020; }
+  .muted { color: #666; font-size: 14px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .hidden { display: none; }
+  #userbar { display: flex; align-items: center; gap: 10px; }
+  #userbar img { width: 32px; height: 32px; border-radius: 50%; }
+  .badge { font-size: 13px; padding: 2px 8px; border-radius: 10px;
+           background: #eee; }
+  .badge.on { background: #dcefe0; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; font-weight: 600; }
+  pre { white-space: pre-wrap; word-break: break-word; background: #f7f7f7;
+        padding: 12px; border-radius: 8px; font-size: 14px; }
+</style>
+</head>
+<body>
+<h1>Ai Room</h1>
+<p class="sub">Every AI answers. They argue. One answer gets approved.</p>
+
+<div id="login-view" class="card hidden">
+  <h2>Sign in</h2>
+  <p>Sign in with your own account to use Ai Room. Your AI keys stay yours.</p>
+  <a id="google-btn" class="login-btn" href="/auth/google">Continue with Google</a>
+  <a id="apple-btn" class="login-btn" href="/auth/apple">Continue with Apple</a>
+  <p id="login-note" class="muted"></p>
+</div>
+
+<div id="app-view" class="hidden">
+  <div id="userbar">
+    <img id="user-pic" class="hidden" alt="">
+    <strong id="user-name"></strong>
+    <span id="user-email" class="muted"></span>
+    <a href="/auth/logout">Sign out</a>
+  </div>
+
+  <div class="card">
+    <label for="question"><strong>Ask the room</strong></label>
+    <textarea id="question" placeholder="What is the best way to learn penetration testing?"></textarea>
+    <div class="row" style="margin: 10px 0;">
+      <label><input type="radio" name="mode" value="compare" checked> Compare</label>
+      <label><input type="radio" name="mode" value="discuss"> Discuss &amp; approve</label>
+      <label>Judge
+        <select id="judge">
+          <option value="">Auto (Claude first)</option>
+          <option>ChatGPT</option>
+          <option>Claude</option>
+          <option>Gemini</option>
+        </select>
+      </label>
+    </div>
+    <div id="provider-status" class="muted"></div>
+    <p><button id="ask-btn" class="primary">Ask</button>
+       <span id="ask-status" class="muted"></span></p>
+  </div>
+
+  <div id="results"></div>
+
+  <div class="card">
+    <details>
+      <summary>Settings &mdash; your AI keys</summary>
+      <p class="muted">Keys are stored only for your account on this server
+      and are never shown back. Leave a field blank to remove that key.
+      Discuss mode costs up to 2&times; the compare mode plus one call.</p>
+      <label>OpenAI API key (ChatGPT)<input type="password" id="key-openai" autocomplete="off"></label>
+      <label>Anthropic API key (Claude)<input type="password" id="key-anthropic" autocomplete="off"></label>
+      <label>Google API key (Gemini)<input type="password" id="key-gemini" autocomplete="off"></label>
+      <label><input type="checkbox" id="key-ollama"> Enable local Ollama model</label>
+      <label>Ollama host<input type="text" id="key-ollama-host" placeholder="http://localhost:11434"></label>
+      <p><button id="save-keys-btn">Save keys</button>
+         <span id="keys-status" class="muted"></span></p>
+    </details>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>Past discussions</summary>
+      <ul id="history"></ul>
+      <pre id="history-view" class="hidden"></pre>
+    </details>
+  </div>
+</div>
+
+<script>
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c];
+  });
+}
+function $(id) { return document.getElementById(id); }
+
+async function loadConfig() {
+  const res = await fetch("/api/config");
+  const cfg = await res.json();
+  if (!cfg.google_enabled) {
+    $("google-btn").classList.add("disabled");
+  }
+  if (!cfg.apple_enabled) {
+    $("apple-btn").classList.add("disabled");
+  }
+  const notes = [];
+  if (!cfg.google_enabled) notes.push("Google sign-in is not configured on this server yet.");
+  if (!cfg.apple_enabled) notes.push("Apple sign-in is not configured on this server yet.");
+  $("login-note").textContent = notes.join(" ");
+}
+
+async function loadMe() {
+  const res = await fetch("/api/me");
+  if (!res.ok) { $("login-view").classList.remove("hidden"); return false; }
+  const me = await res.json();
+  $("user-name").textContent = me.name || me.email;
+  $("user-email").textContent = me.email;
+  if (me.picture) { $("user-pic").src = me.picture; $("user-pic").classList.remove("hidden"); }
+  $("app-view").classList.remove("hidden");
+  return true;
+}
+
+async function loadKeyStatus() {
+  const res = await fetch("/api/keys");
+  if (!res.ok) return;
+  const st = await res.json();
+  const parts = [
+    ["ChatGPT", st.OPENAI_API_KEY], ["Claude", st.ANTHROPIC_API_KEY],
+    ["Gemini", st.GEMINI_API_KEY], ["Local", st.OLLAMA_ENABLED]
+  ];
+  $("provider-status").innerHTML = parts.map(function (p) {
+    return '<span class="badge' + (p[1] ? " on" : "") + '">' + esc(p[0]) +
+           (p[1] ? " ready" : " no key") + "</span>";
+  }).join(" ");
+  $("key-ollama").checked = !!st.OLLAMA_ENABLED;
+  $("key-ollama-host").value = "";
+}
+
+$("save-keys-btn").addEventListener("click", async function () {
+  const body = {
+    OPENAI_API_KEY: $("key-openai").value,
+    ANTHROPIC_API_KEY: $("key-anthropic").value,
+    GEMINI_API_KEY: $("key-gemini").value,
+    OLLAMA_ENABLED: $("key-ollama").checked ? "true" : "",
+    OLLAMA_HOST: $("key-ollama-host").value
+  };
+  const res = await fetch("/api/keys", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(body)
+  });
+  $("keys-status").textContent = res.ok ? "Saved." : "Could not save.";
+  $("key-openai").value = ""; $("key-anthropic").value = ""; $("key-gemini").value = "";
+  loadKeyStatus();
+});
+
+function answerHtml(a) {
+  if (a.error) return '<div class="answer"><h3>' + esc(a.name) + " (" + esc(a.model) +
+    ')</h3><p class="error">Error: ' + esc(a.error) + "</p></div>";
+  return '<div class="answer"><h3>' + esc(a.name) + " (" + esc(a.model) + ")</h3>" +
+    esc(a.text) + '<p class="muted">' + esc(a.seconds) + "s" +
+    (a.usage ? " &middot; " + esc(a.usage) : "") + "</p></div>";
+}
+
+$("ask-btn").addEventListener("click", async function () {
+  const question = $("question").value.trim();
+  if (!question) { $("ask-status").textContent = "Type a question first."; return; }
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  const judge = $("judge").value || null;
+  $("ask-btn").disabled = true;
+  $("ask-status").textContent = mode === "discuss"
+    ? "Discussing — answers, critiques, then a verdict. This takes a while."
+    : "Asking everyone…";
+  $("results").innerHTML = "";
+  try {
+    const res = await fetch("/api/ask", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({question: question, mode: mode, judge: judge})
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      $("results").innerHTML = '<p class="error">' + esc(data.error || "Failed.") + "</p>";
+    } else if (data.mode === "compare") {
+      $("results").innerHTML = "<h2>Answers</h2>" +
+        data.answers.map(answerHtml).join("");
+    } else {
+      let html = "<h2>Round 1 — answers</h2>" +
+        data.rounds[0].map(answerHtml).join("") +
+        "<h2>Round 2 — critiques</h2>" +
+        data.rounds[1].map(answerHtml).join("");
+      html += '<div class="winner"><strong>Verdict — judge: ' + esc(data.judge) + "</strong>" +
+        (data.winner ? "<br>Winner: <strong>" + esc(data.winner) + "</strong>" : "") +
+        "</div>" + answerHtml(data.verdict);
+      $("results").innerHTML = html;
+    }
+    if (res.ok) {
+      $("ask-status").textContent = "Saved to " + data.transcript + ".";
+      loadHistory();
+    } else {
+      $("ask-status").textContent = "";
+    }
+  } catch (e) {
+    $("results").innerHTML = '<p class="error">Request failed: ' + esc(e.message) + "</p>";
+    $("ask-status").textContent = "";
+  }
+  $("ask-btn").disabled = false;
+});
+
+async function loadHistory() {
+  const res = await fetch("/api/transcripts");
+  if (!res.ok) return;
+  const data = await res.json();
+  $("history").innerHTML = data.transcripts.map(function (name) {
+    return '<li><a href="#" data-name="' + esc(name) + '">' + esc(name) + "</a></li>";
+  }).join("") || "<li>No transcripts yet.</li>";
+  $("history").querySelectorAll("a").forEach(function (a) {
+    a.addEventListener("click", async function (ev) {
+      ev.preventDefault();
+      const r = await fetch("/api/transcripts/" + encodeURIComponent(a.dataset.name));
+      const d = await r.json();
+      $("history-view").textContent = d.text || "";
+      $("history-view").classList.remove("hidden");
+    });
+  });
+}
+
+(async function init() {
+  await loadConfig();
+  if (await loadMe()) { loadKeyStatus(); loadHistory(); }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,3 @@
+# Only needed for Sign in with Apple (ES256 client secret + RS256 token
+# verification). Google sign-in and everything else are standard library only.
+cryptography
