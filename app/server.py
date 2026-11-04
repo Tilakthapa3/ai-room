@@ -249,10 +249,10 @@ def make_icon_png(size):
 
     radius = max(1, int(size * 0.22))
     bg = (26, 26, 26, 255)
-    dots = [(-0.27, 0.02, 0.085, (255, 255, 255, 255)),
-            (0.0, 0.02, 0.085, (125, 211, 252, 255)),
-            (0.27, 0.02, 0.085, (251, 191, 36, 255))]
-    center = size / 2.0
+    # Bold white "T": top bar + stem, as fractions of the icon size.
+    bar = (0.22, 0.22, 0.78, 0.38)   # left, top, right, bottom
+    stem = (0.42, 0.38, 0.58, 0.78)
+    t_color = (255, 255, 255, 255)
     raw = bytearray()
     for y in range(size):
         raw.append(0)  # filter: none
@@ -273,12 +273,10 @@ def make_icon_png(size):
                 raw += b"\x00\x00\x00\x00"
                 continue
             pixel = bg
-            for ox, oy, rfrac, color in dots:
-                dx = x - (center + ox * size)
-                dy = y - (center + oy * size)
-                if dx * dx + dy * dy <= (rfrac * size) ** 2:
-                    pixel = color
-                    break
+            fx, fy = x / size, y / size
+            if ((bar[0] <= fx < bar[2] and bar[1] <= fy < bar[3]) or
+                    (stem[0] <= fx < stem[2] and stem[1] <= fy < stem[3])):
+                pixel = t_color
             raw += bytes(pixel)
     ihdr = size.to_bytes(4, "big") + size.to_bytes(4, "big") + bytes(
         [8, 6, 0, 0, 0])
